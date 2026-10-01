@@ -1,0 +1,154 @@
+# =============================================================================
+# dsm_coreg example configuration
+# =============================================================================
+#
+# TOML is used for configuration because this file is intended to be edited by
+# people.  Comments are allowed, related options can be grouped into sections,
+# and numeric/boolean values remain strongly typed.
+#
+# Relative paths are resolved relative to THIS TOML FILE, not to the shell's
+# current working directory.  That makes an experiment folder portable.
+# =============================================================================
+
+config_version = 1
+
+[input]
+# Higher-accuracy or otherwise designated reference surface.
+reference_dsm = "../data/usgs_reference_dsm.tif"
+
+# Surface that will be translated to align with the reference.
+target_dsm = "../data/blacksky_core3d_dsm.tif"
+
+
+[alignment]
+# Initial map-coordinate translation estimate in meters.  Zero is appropriate
+# when both DSMs are already reasonably georeferenced.  The pyramid enlarges the
+# convergence basin; the optional coarse search can be enabled for poorer starts.
+initial_tx_m = 0.0
+initial_ty_m = 0.0
+initial_tz_m = 0.0
+
+# Skip this many native-resolution reference pixels along the image border.
+border_px = 5
+
+# Robust sample pre-filter in meters.  IMPORTANT: the target is sampled at the
+# CURRENT estimated translation before this difference is tested.  Set <= 0 to
+# disable the pre-filter completely.
+max_abs_dz_m = 50.0
+
+# Huber IRLS threshold in meters.  Residuals larger than this threshold receive
+# reduced influence rather than dominating the normal equations.  Set <= 0 for
+# ordinary least squares.
+huber_delta_m = 1.0
+
+# Maximum Gauss-Newton iterations at each pyramid level.
+max_iterations = 30
+
+# Converge when sqrt(dtx^2 + dty^2 + dtz^2) falls below this value.
+step_tolerance_m = 0.001
+
+# Small diagonal damping term for numerical stability.
+lambda = 0.001
+
+# Minimum number of valid samples required for an accepted alignment fit.
+min_samples = 200
+
+
+[pyramid]
+# Coarse-to-fine alignment is recommended.  Factors are processed from left to
+# right and must be strictly decreasing, with the final factor equal to 1.
+enabled = true
+factors = [8, 4, 2, 1]
+
+
+[coarse_search]
+# Optional global XY search at only the COARSEST pyramid level.  It is disabled
+# by default because the current Gauss-Newton/Huber solver already performs well
+# for the several-meter offsets observed in the USGS/BlackSky experiments.
+enabled = false
+
+# Search +/- these distances around initial_tx_m and initial_ty_m.
+range_x_m = 20.0
+range_y_m = 20.0
+step_m = 2.0
+
+# Use every N-th coarse-level reference sample while scoring candidates.
+sample_stride = 4
+min_samples = 200
+
+
+[bootstrap]
+# Spatial block bootstrap is run only AFTER the final full-resolution base fit.
+enabled = true
+replicates = 200
+
+# Valid values: "fixed" or "multiscale".
+block_mode = "multiscale"
+
+# Used in fixed mode.
+block_px = 64
+
+# Used in multiscale mode.  One size is selected per replicate.
+block_min_px = 32
+block_max_px = 128
+block_step_px = 16
+
+# Reproducible random seed.  Bootstrap RNG is deterministic by replicate index,
+# so results should not change merely because the OpenMP thread count changes.
+seed = 12345
+
+# 0 = automatically require max(20, replicates/5) successful replicates.
+min_successful_replicates = 0
+
+
+[runtime]
+# 0 lets the OpenMP runtime choose its default thread count.
+threads = 12
+
+# Keep stdout compact.  Detailed progress and timing still go to alignment.log.
+console_summary = false
+
+# Enable iteration-level Gauss-Newton logging for diagnosis.
+debug_iterations = false
+
+
+[output]
+# Relative output paths are resolved relative to this TOML file.
+directory = "../alignment_results"
+
+# Scientific/machine-readable results remain JSON by design.
+results_json = "alignment_results.json"
+
+# Human-readable processing diagnostics and timing.
+log_file = "alignment.log"
+
+# Fully resolved configuration, including defaults, written back as TOML.
+effective_config_toml = "effective_config.toml"
+
+# Optionally write the translated target DSM as a GeoTIFF.
+write_aligned_dsm = true
+aligned_dsm = "target_aligned.tif"
+
+
+[bootstrap.output]
+# Optional bootstrap audit/debug product.  When enabled, the program creates a
+# GeoPackage with EXACTLY one polygon feature layer per requested bootstrap
+# replicate:
+#
+#   bootstrap_000001
+#   bootstrap_000002
+#   ...
+#
+# Each layer shows the unique spatial blocks selected in that replicate.  The
+# `multiplicity` field records how many times each block was drawn with
+# replacement.  The global tx/ty/tz produced by the complete replicate are NOT
+# repeated on every polygon.  Instead, they are stored once in the non-spatial
+# `bootstrap_replicates` table and are also attached as layer metadata.
+#
+# This output can be large and slower to write when hundreds or thousands of
+# replicates are requested, so it is disabled by default for production runs.
+write_geopackage = false
+
+# Relative paths are placed inside [output].directory.  Absolute paths are also
+# accepted.
+geopackage = "bootstrap_replicates.gpkg"
